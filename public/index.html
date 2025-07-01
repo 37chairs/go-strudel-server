@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Strudel Server</title>
+    <style>
+      body {
+        font-family: "Comic Sans MS", "Comic Sans", cursive;
+        margin: 20px;
+        background-color: #f5f5f5;
+      }
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      .status {
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+        font-weight: bold;
+      }
+      .connected {
+        background-color: #d4edda;
+        color: #155724;
+      }
+      .disconnected {
+        background-color: #f8d7da;
+        color: #721c24;
+      }
+      .message-log {
+        height: 200px;
+        overflow-y: auto;
+        border: 1px solid #ddd;
+        padding: 10px;
+        background-color: #f9f9f9;
+        font-family: "Comic Sans MS", "Comic Sans", cursive;
+        font-size: 12px;
+      }
+      .controls {
+        margin: 20px 0;
+      }
+      input,
+      button {
+        padding: 8px;
+        margin: 5px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+      button {
+        background-color: #007bff;
+        color: white;
+        cursor: pointer;
+      }
+      button:hover {
+        background-color: #0056b3;
+      }
+      button:disabled {
+        background-color: #6c757d;
+        cursor: not-allowed;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Strudel WebSocket Client</h1>
+
+      <div id="status" class="status disconnected">Disconnected</div>
+
+      <div class="controls">
+        <button id="connectBtn" onclick="connectWebSocket()">Connect</button>
+        <button id="disconnectBtn" onclick="disconnectWebSocket()" disabled>
+          Disconnect
+        </button>
+      </div>
+
+      <!-- a js eq might be pretty cool-->
+
+      <h3>Message Log:</h3>
+      <div id="messageLog" class="message-log"></div>
+
+      <p>
+        <a href="https://37chairs.com" target="_blank"
+          ><img
+            src="37chairs.png"
+            style="width: auto; height: 23px"
+            alt="37 chairs logo"
+          />
+        </a>
+      </p>
+    </div>
+
+    <script src="https://unpkg.com/@strudel/web@latest"></script>
+
+    <script>
+      // WebSocket functionality
+      let socket = null;
+      let clientId = "client_" + Math.random().toString(36).substr(2, 9);
+
+      function connectWebSocket() {
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+        socket = new WebSocket(wsUrl);
+
+        socket.onopen = function (event) {
+          updateStatus("Connected", true);
+          logMessage("Connected to WebSocket server");
+          document.getElementById("connectBtn").disabled = true;
+          document.getElementById("disconnectBtn").disabled = false;
+        };
+
+        socket.onmessage = function (event) {
+          try {
+            const message = JSON.parse(event.data);
+            logMessage(
+              `Received: ${message.type} - ${JSON.stringify(message.content)}`
+            );
+
+            if (message.type === "play") {
+              window.player.play(message.content.pattern);
+            } else if (message.type === "stop") {
+              window.player.stop();
+            } else if (message.type === "setcps") {
+              window.player.setcps(message.content.cps);
+            }
+          } catch (e) {
+            logMessage(`Received raw message: ${event.data}`);
+          }
+        };
+
+        socket.onclose = function (event) {
+          updateStatus("Disconnected", false);
+          logMessage("Disconnected from WebSocket server");
+          document.getElementById("connectBtn").disabled = false;
+          document.getElementById("disconnectBtn").disabled = true;
+        };
+
+        socket.onerror = function (error) {
+          logMessage("WebSocket error: " + error);
+        };
+      }
+
+      function disconnectWebSocket() {
+        if (socket) {
+          socket.close();
+          socket = null;
+        }
+      }
+
+      function updateStatus(text, connected) {
+        const statusEl = document.getElementById("status");
+        statusEl.textContent = text;
+        statusEl.className =
+          "status " + (connected ? "connected" : "disconnected");
+      }
+
+      function logMessage(message) {
+        const logEl = document.getElementById("messageLog");
+        const timestamp = new Date().toLocaleTimeString();
+        logEl.innerHTML += `[${timestamp}] ${message}<br>`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      initStrudel({
+        prebake: () => samples("github:tidalcycles/dirt-samples"),
+      });
+
+      window.player = {
+        currentPattern: null,
+        play(patternExpr) {
+          console.log(`[player] attempting to play pattern: ${patternExpr}`);
+          let cleanPattern = patternExpr;
+
+          if (patternExpr.includes("stack(") && patternExpr.includes("s(")) {
+            console.log(`[player] processing complex pattern: ${cleanPattern}`);
+          }
+
+          const pat = evaluate(cleanPattern);
+          this.currentPattern = pat.play();
+        },
+        stop() {
+          const silence = evaluate("s()");
+          this.currentPattern = silence.play();
+        },
+        setcps(cps) {
+          const cpsExpr = `setcps(${cps})`;
+          evaluate(cpsExpr);
+        },
+      };
+
+      window.addEventListener("load", function () {
+        setTimeout(connectWebSocket, 1000);
+      });
+    </script>
+  </body>
+</html>
